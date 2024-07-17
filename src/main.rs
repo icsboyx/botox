@@ -6,8 +6,8 @@ use std::sync::Arc;
 use tokio::time::{ sleep, Duration };
 
 use bus::*;
-use futures::{ future::maybe_done, FutureExt };
-use tokio::{ io::AsyncBufReadExt, pin, task };
+use futures::FutureExt;
+use tokio::io::AsyncBufReadExt;
 
 #[tokio::main]
 async fn main() {
