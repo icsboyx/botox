@@ -1,1 +1,5 @@
 /target
+.vscode/settings.json
+token.txt
+
+config.toml

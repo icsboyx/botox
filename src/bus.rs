@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use std::{ collections::VecDeque, sync::Arc };
-
 use tokio::sync::{ Notify, RwLock };
+use anyhow::Result;
 
 #[derive(Debug)]
 pub struct Queue {
@@ -17,7 +17,8 @@ impl Queue {
         }
     }
 
-    pub async fn push_back(&self, item: String) {
+    pub async fn push_back(&self, item: impl AsRef<str>) {
+        let item = item.as_ref().to_owned();
         self.queue.write().await.push_back(item);
         self.event.notify_waiters();
     }
@@ -32,6 +33,11 @@ impl Queue {
 
     pub async fn display(&self) -> Vec<String> {
         self.queue.read().await.iter().cloned().collect()
+    }
+
+    pub async fn receive(&self) -> Option<String> {
+        self.event().notified().await;
+        self.pop_front().await
     }
 }
 
@@ -50,7 +56,8 @@ impl Subscribers {
         self.subscribers.write().await.push(subscriber);
     }
 
-    pub async fn send(&self, message: String) {
+    pub async fn send(&self, message: impl AsRef<str>) {
+        let message = message.as_ref().to_owned();
         for subscriber in self.subscribers.write().await.iter() {
             subscriber.push_back(message.clone()).await;
         }
@@ -68,7 +75,8 @@ pub struct BusEntity {
 }
 
 impl BusEntity {
-    pub fn new(id: String) -> Self {
+    pub fn new(id: impl AsRef<str>) -> Self {
+        let id = id.as_ref().to_owned();
         Self {
             id,
             queue: Arc::new(Queue::new()),
@@ -84,14 +92,26 @@ impl BusEntity {
         self.queue.clone()
     }
 
+    pub async fn subscribe(&self, subscriber: Arc<Queue>) {
+        self.subscribers.push(subscriber).await;
+    }
+
     pub fn subscribers(&self) -> Arc<Subscribers> {
         self.subscribers.clone()
     }
-    pub async fn send(&self, message: String) {
+
+    pub async fn subscribers_send(&self, message: impl AsRef<str>) {
+        let message = message.as_ref().to_owned();
         self.subscribers.send(message).await;
     }
-    pub async fn subscribe(&self, subscriber: Arc<Queue>) {
-        self.subscribers.push(subscriber).await;
+
+    pub async fn queue_send(&self, message: impl AsRef<str>) {
+        let message = message.as_ref().to_owned();
+        self.queue.push_back(message).await;
+    }
+
+    pub async fn queue_receive(&self) -> Option<String> {
+        self.queue.receive().await
     }
 }
 
@@ -116,19 +136,19 @@ impl Bus {
         entity
     }
 
-    pub async fn get_entity(&self, id: impl AsRef<str>) -> Option<Arc<BusEntity>> {
+    pub async fn get_entity(&self, id: impl AsRef<str>) -> Result<Arc<BusEntity>> {
         let id = id.as_ref();
-        self.entities
-            .read().await
-            .iter()
-            .find(|entity| entity.id == id)
-            .cloned()
+        for entity in self.entities.read().await.iter() {
+            if entity.id() == id {
+                return Ok(entity.clone());
+            }
+        }
+        Err(anyhow::anyhow!("Entity not found"))
     }
 
     pub async fn subscribe(&self, id: impl AsRef<str>, subscriber: Arc<BusEntity>) {
         loop {
-            if let Some(entity) = self.get_entity(&id).await {
-                println!("[{}] Subscribing to {}", subscriber.id, entity.id());
+            if let Ok(entity) = self.get_entity(&id).await {
                 entity.subscribe(subscriber.queue()).await;
                 break;
             } else {
