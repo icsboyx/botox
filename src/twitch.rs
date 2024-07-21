@@ -11,7 +11,7 @@ trait WsMessageHandler {
 
 impl<T: std::fmt::Display> WsMessageHandler for T {
     fn as_ws_text(&self) -> Message {
-        println!("[TX] {}", self.to_string());
+        println!("[TWITCH][TX] {}", self);
         Message::text(self.to_string())
     }
 }
@@ -31,7 +31,7 @@ pub async fn start(
     _ = write.send(format!("JOIN #{}", user_config.channel).as_ws_text()).await?;
 
     let ping_interval = tokio::time::interval(Duration::from_secs(180));
-    let my_queue = my_subscriber.queue().event();
+    let _my_queue = my_subscriber.queue().event();
 
     pin_mut!(ping_interval);
 
@@ -54,7 +54,6 @@ pub async fn start(
             }
 
             Some(msg) = my_subscriber.queue_receive() => {
-                println!("[TWITCH][TX] {:?}", msg);
                 write.send(msg.as_ws_text()).await?;
             }
         }

@@ -18,8 +18,7 @@ impl Queue {
     }
 
     pub async fn push_back(&self, item: impl AsRef<str>) {
-        let item = item.as_ref().to_owned();
-        self.queue.write().await.push_back(item);
+        self.queue.write().await.push_back(item.as_ref().to_string());
         self.event.notify_waiters();
     }
 
@@ -39,8 +38,15 @@ impl Queue {
         self.event().notified().await;
         self.pop_front().await
     }
-}
 
+    pub async fn receive_all(&self) -> Vec<String> {
+        self.event().notified().await;
+        self.queue
+            .write().await
+            .drain(..)
+            .collect()
+    }
+}
 pub struct Subscribers {
     subscribers: Arc<RwLock<Vec<Arc<Queue>>>>,
 }
@@ -56,10 +62,9 @@ impl Subscribers {
         self.subscribers.write().await.push(subscriber);
     }
 
-    pub async fn send(&self, message: impl AsRef<str>) {
-        let message = message.as_ref().to_owned();
+    pub async fn send(&self, message: impl AsRef<str> + Clone) {
         for subscriber in self.subscribers.write().await.iter() {
-            subscriber.push_back(message.clone()).await;
+            subscriber.push_back(message.as_ref()).await;
         }
     }
 
@@ -76,7 +81,7 @@ pub struct BusEntity {
 
 impl BusEntity {
     pub fn new(id: impl AsRef<str>) -> Self {
-        let id = id.as_ref().to_owned();
+        let id = id.as_ref().to_string();
         Self {
             id,
             queue: Arc::new(Queue::new()),
@@ -101,17 +106,19 @@ impl BusEntity {
     }
 
     pub async fn subscribers_send(&self, message: impl AsRef<str>) {
-        let message = message.as_ref().to_owned();
-        self.subscribers.send(message).await;
+        self.subscribers.send(message.as_ref()).await;
     }
 
     pub async fn queue_send(&self, message: impl AsRef<str>) {
-        let message = message.as_ref().to_owned();
-        self.queue.push_back(message).await;
+        self.queue.push_back(message.as_ref()).await;
     }
 
     pub async fn queue_receive(&self) -> Option<String> {
         self.queue.receive().await
+    }
+
+    pub async fn queue_receive_all(&self) -> Vec<String> {
+        self.queue.receive_all().await
     }
 }
 
@@ -129,7 +136,6 @@ impl Bus {
     }
 
     pub async fn register(&self, id: impl AsRef<str>) -> Arc<BusEntity> {
-        let id = id.as_ref().to_owned();
         let entity = Arc::new(BusEntity::new(id));
         self.entities.write().await.push(entity.clone());
         self.event.notify_waiters();
@@ -138,15 +144,16 @@ impl Bus {
 
     pub async fn get_entity(&self, id: impl AsRef<str>) -> Result<Arc<BusEntity>> {
         let id = id.as_ref();
-        for entity in self.entities.read().await.iter() {
-            if entity.id() == id {
-                return Ok(entity.clone());
-            }
-        }
-        Err(anyhow::anyhow!("Entity not found"))
+        self.entities
+            .read().await
+            .iter()
+            .find(|entity| entity.id() == id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("Entity not found"))
     }
 
     pub async fn subscribe(&self, id: impl AsRef<str>, subscriber: Arc<BusEntity>) {
+        let id = id.as_ref();
         loop {
             if let Ok(entity) = self.get_entity(&id).await {
                 entity.subscribe(subscriber.queue()).await;
