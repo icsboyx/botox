@@ -1,4 +1,4 @@
-use std::{ collections::HashMap, sync::Arc };
+use std::{collections::HashMap, sync::Arc};
 
 use crate::*;
 
@@ -28,6 +28,10 @@ impl BotCommand {
         }
     }
 
+    fn action(&self, irc_msg: &Message) -> String {
+        (self.action)(irc_msg)
+    }
+
     fn with_audio_type(mut self, audio_type: AudioType) -> Self {
         self.audio_type = audio_type;
         self
@@ -45,7 +49,8 @@ impl BotCommands {
     }
 
     fn add_command(&mut self, command: impl AsRef<str>, bot_command: BotCommand) {
-        self.hashmap.insert(command.as_ref().to_string(), bot_command);
+        self.hashmap
+            .insert(command.as_ref().to_string(), bot_command);
     }
 
     fn get_command(&self, command: &str) -> Option<&BotCommand> {
@@ -64,36 +69,36 @@ pub async fn start(bus: Arc<Bus>) {
 
     loop {
         tokio::select! {
-        messages = my_subscriber.queue_receive_all() => {
-            for msg in messages {
-                let irc_msg = parse_message(&msg);
-                #[cfg(debug_assertions)]
-                println!("[COMMANDS][RX] {:?}", irc_msg);
-                
+            messages = my_subscriber.queue_receive_all() => {
+                for msg in messages {
+                    let irc_msg = parse_message(&msg);
+                    #[cfg(debug_assertions)]
+                    println!("[COMMANDS][RX] {:?}", irc_msg);
 
-                match irc_msg.context.command.as_str() {
-                    "PRIVMSG" => {
-                        if irc_msg.payload.starts_with("!") {
-                            let command = irc_msg.payload.split_whitespace().next().unwrap();
-                            if let Some(response) = commands.get_command(command) {
-                                let response = (response.action)(&irc_msg);
-                                bus.get_entity("twitch").await.unwrap().queue_send(response).await;
+
+                    match irc_msg.context.command.as_str() {
+                        "PRIVMSG" => {
+                            if irc_msg.payload.starts_with("!") {
+                                let command = irc_msg.payload.split_whitespace().next().unwrap();
+                                if let Some(response) = commands.get_command(command) {
+                                    let response = response.action(&irc_msg);
+                                    bus.get_entity("twitch").await.unwrap().queue_send(response).await;
+                                }
                             }
+
                         }
-                        
+                        "PING" => {
+                            bus.get_entity("twitch").await.unwrap().queue_send("PONG :tmi.twitch.tv").await;
+                        }
+                        _ => {}
                     }
-                    "PING" => {
-                        bus.get_entity("twitch").await.unwrap().queue_send("PONG :tmi.twitch.tv").await;
-                    }
-                    _ => {}
+
+
                 }
 
-                
-            }            
-            
-            
+
+            }
         }
-    }
     }
 }
 

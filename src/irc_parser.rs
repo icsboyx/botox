@@ -3,20 +3,22 @@
 
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Message {
+use serde::{ Deserialize, Serialize };
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IrcMessage {
     pub token: HashMap<String, String>,
     pub context: Context,
     pub payload: String,
 }
 
-impl Message {
+impl IrcMessage {
     pub fn new(
         token: HashMap<String, String>,
         context: Context,
         payload: impl Into<String>
     ) -> Self {
-        Message {
+        IrcMessage {
             token,
             context,
             payload: payload.into(),
@@ -24,7 +26,7 @@ impl Message {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Context {
     pub sender: String,
     pub command: String,
@@ -45,7 +47,7 @@ impl Context {
     }
 }
 
-pub fn parse_message(msg: &String) -> Message {
+pub fn parse_message(msg: &String) -> IrcMessage {
     let token;
     let context;
     let payload;
@@ -74,7 +76,7 @@ pub fn parse_message(msg: &String) -> Message {
         }
     }
 
-    let irc_message = Message::new(
+    let irc_message = IrcMessage::new(
         parse_irc_message_token(token),
         parse_irc_message_context(context),
         payload
