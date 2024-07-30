@@ -71,15 +71,18 @@ async fn user_input(bus: Arc<Bus>) {
 
     let read_user_input = async move {
         let mut std_out = BufReader::new(tokio::io::stdin());
-        let mut line = String::new();
-        std_out.read_line(&mut line).await.unwrap();
-        println!("[user_input] {:?}", line);
-        let irc_message = IrcMessage::new(
-            HashMap::new(),
-            Context::new("test", "PRIVMSG", "#icsboyx"),
-            line,
-        );
-        twitch_sunscriber.send(irc_message).await.unwrap();
+
+        loop {
+            let mut line = String::new();
+            std_out.read_line(&mut line).await.unwrap();
+            println!("[user_input] {:?}", line);
+            let irc_message = IrcMessage::new(
+                HashMap::new(),
+                Context::new("test", "PRIVMSG", "#icsboyx"),
+                line,
+            );
+            twitch_sunscriber.send(irc_message).await.unwrap();
+        }
     };
 
     let read_twitch = async move {

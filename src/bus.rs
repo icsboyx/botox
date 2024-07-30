@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use std::{clone, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -70,30 +70,6 @@ impl BusEntity {
     ) -> Result<()> {
         if let Ok(message) = serde_json::to_string(&message) {
             self.clients.send(message)?;
-            return Ok(());
-        }
-        anyhow::bail!("Failed to serialize message");
-    }
-
-    pub async fn recv_from_producer(&self) -> Result<String> {
-        let message = self.clients.subscribe().recv().await?;
-        Ok(message)
-    }
-
-    pub async fn recv_from_producer_transform<MessageType: Serialize + for<'a> Deserialize<'a>>(
-        &self,
-    ) -> Result<MessageType> {
-        let message = self.clients.subscribe().recv().await?;
-        let message: MessageType = serde_json::from_str(&message)?;
-        Ok(message)
-    }
-
-    pub async fn send_to_producer(
-        &self,
-        message: impl Serialize + for<'a> Deserialize<'_>,
-    ) -> Result<()> {
-        if let Ok(message) = serde_json::to_string(&message) {
-            self.producer_tx.send(message).await?;
             return Ok(());
         }
         anyhow::bail!("Failed to serialize message");
