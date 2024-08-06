@@ -1,51 +1,72 @@
 #![allow(dead_code)]
-use std::{collections::HashMap, sync::Arc};
-
+use crate::irc_parser::IrcMessage;
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use std::{any::Any, collections::HashMap, fmt::Debug, sync::Arc};
+
 use tokio::sync::{broadcast, mpsc, Notify, RwLock};
 
-#[derive(Debug, Clone)]
-pub struct BusEntitySubscriber {
-    rx: Arc<RwLock<broadcast::Receiver<String>>>,
-    tx: Arc<mpsc::Sender<String>>,
+pub trait BusMessageTrait: Debug + Send + Sync + 'static {
+    fn as_bus_message(self) -> BusMessageTypeEnum;
+}
+impl BusMessageTrait for String {
+    fn as_bus_message(self) -> BusMessageTypeEnum {
+        BusMessageTypeEnum::String(self)
+    }
 }
 
-impl BusEntitySubscriber {
-    pub fn new(rx: broadcast::Receiver<String>, tx: mpsc::Sender<String>) -> Self {
-        let rx = Arc::new(RwLock::new(rx));
-        let tx = Arc::new(tx);
-        BusEntitySubscriber { rx, tx }
+impl BusMessageTrait for IrcMessage {
+    fn as_bus_message(self) -> BusMessageTypeEnum {
+        BusMessageTypeEnum::IrcMessage(self)
     }
+}
 
-    pub async fn recv(&mut self) -> Result<String> {
-        let message = self.rx.write().await.recv().await?;
-        Ok(message)
+#[derive(Debug, Clone)]
+pub enum BusMessageTypeEnum {
+    String(String),
+    IrcMessage(IrcMessage),
+}
+
+impl From<String> for BusMessageTypeEnum {
+    fn from(s: String) -> Self {
+        BusMessageTypeEnum::String(s)
     }
+}
 
-    pub async fn recv_transform<MessageType: Serialize + for<'a> Deserialize<'a>>(
-        &mut self,
-    ) -> Result<MessageType> {
-        let message = self.rx.write().await.recv().await?;
-        let message: MessageType = serde_json::from_str(&message)?;
-        Ok(message)
+impl From<IrcMessage> for BusMessageTypeEnum {
+    fn from(m: IrcMessage) -> Self {
+        BusMessageTypeEnum::IrcMessage(m)
     }
+}
 
-    pub async fn send(&self, message: impl Serialize + for<'a> Deserialize<'_>) -> Result<()> {
-        if let Ok(message) = serde_json::to_string(&message) {
-            self.tx.send(message).await?;
-            return Ok(());
+// Implementing TryFrom<BusMessageTypeEnum> for IrcMessage
+impl TryFrom<BusMessageTypeEnum> for IrcMessage {
+    type Error = &'static str;
+
+    fn try_from(value: BusMessageTypeEnum) -> Result<Self, Self::Error> {
+        match value {
+            BusMessageTypeEnum::IrcMessage(m) => Ok(m),
+            _ => Err("BusMessageTypeEnum does not contain an IrcMessage"),
         }
-        anyhow::bail!("Failed to serialize message");
+    }
+}
+// Implementing TryFrom<BusMessageTypeEnum> for String
+impl TryFrom<BusMessageTypeEnum> for String {
+    type Error = &'static str;
+
+    fn try_from(value: BusMessageTypeEnum) -> Result<Self, Self::Error> {
+        match value {
+            BusMessageTypeEnum::String(s) => Ok(s),
+            _ => Err("BusMessageTypeEnum does not contain a String"),
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct BusEntity {
     id: String,
-    clients: broadcast::Sender<String>,
-    producer_tx: mpsc::Sender<String>,
-    producer_rx: Arc<RwLock<mpsc::Receiver<String>>>,
+    clients: broadcast::Sender<BusMessageTypeEnum>,
+    producer_tx: mpsc::Sender<BusMessageTypeEnum>,
+    producer_rx: Arc<RwLock<mpsc::Receiver<BusMessageTypeEnum>>>,
 }
 
 impl BusEntity {
@@ -64,31 +85,67 @@ impl BusEntity {
         &self.id
     }
 
-    pub async fn send_to_consumer(
-        &self,
-        message: impl Serialize + for<'a> Deserialize<'_>,
-    ) -> Result<()> {
-        if let Ok(message) = serde_json::to_string(&message) {
-            self.clients.send(message)?;
-            return Ok(());
-        }
-        anyhow::bail!("Failed to serialize message");
+    pub async fn send_to_consumer(&self, message: BusMessageTypeEnum) -> Result<()> {
+        // if let Ok(message) = serde_json::to_string(&message) {
+        //     self.clients.send(message)?;
+        //     return Ok(());
+        self.clients.send(message)?;
+        Ok(())
     }
 
-    pub async fn recv_from_consumer(&self) -> Result<String> {
+    pub async fn recv_from_consumer(&self) -> Result<BusMessageTypeEnum> {
         let message = self.producer_rx.write().await.recv().await.unwrap();
         Ok(message)
     }
 
-    pub async fn recv_from_consumer_transform<MessageType: Serialize + for<'a> Deserialize<'a>>(
-        &self,
-    ) -> Result<MessageType> {
-        let message = self.producer_rx.write().await.recv().await.unwrap();
-        let message: MessageType = serde_json::from_str(&message)?;
-        Ok(message)
-    }
+    // pub async fn recv_from_consumer_transform<MessageType: Serialize + for<'a> Deserialize<'a>>(
+    //     &self
+    // ) -> Result<MessageType> {
+    //     let message = self.producer_rx.write().await.recv().await.unwrap();
+    //     let message: MessageType = serde_json::from_str(&message)?;
+    //     Ok(message)
+    // }
 }
 
+#[derive(Debug, Clone)]
+pub struct BusEntitySubscriber {
+    rx: Arc<RwLock<broadcast::Receiver<BusMessageTypeEnum>>>,
+    tx: Arc<mpsc::Sender<BusMessageTypeEnum>>,
+}
+
+impl BusEntitySubscriber {
+    pub fn new(
+        rx: broadcast::Receiver<BusMessageTypeEnum>,
+        tx: mpsc::Sender<BusMessageTypeEnum>,
+    ) -> Self {
+        let rx = Arc::new(RwLock::new(rx));
+        let tx = Arc::new(tx);
+        BusEntitySubscriber { rx, tx }
+    }
+
+    pub async fn recv(&mut self) -> Result<BusMessageTypeEnum> {
+        let message = self.rx.write().await.recv().await?;
+        Ok(message)
+    }
+
+    // pub async fn recv_transform<MessageType: Serialize + for<'a> Deserialize<'a>>(
+    //     &mut self
+    // ) -> Result<MessageType> {
+    //     let message = self.rx.write().await.recv().await?;
+    //     let message: MessageType = serde_json::from_str(&message)?;
+    //     Ok(message)
+    // }
+
+    pub async fn send(&self, message: BusMessageTypeEnum) -> Result<()> {
+        // if let Ok(message) = serde_json::to_string(&message) {
+        //     self.tx.send(message).await?;
+        //     return Ok(());
+        // }
+        // anyhow::bail!("Failed to serialize message");
+        self.tx.send(message).await?;
+        Ok(())
+    }
+}
 pub struct Bus {
     entities: Arc<RwLock<HashMap<String, Arc<BusEntity>>>>,
     notify: Notify,

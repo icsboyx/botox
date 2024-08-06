@@ -46,21 +46,15 @@ pub async fn start(
                     let lines = line.to_text().unwrap().trim_end_matches("\r\n").split("\r\n");
                     for line in lines {
                         let payload = line;
-                        let irc_message = parse_message(&payload.to_string());
-                        my_subscriber.send_to_consumer(irc_message).await?;
-                        println!("[TWITCH][RX] {}", payload);
+                        let irc_message = irc_parser::parse_message(&payload.to_string());
+                        my_subscriber.send_to_consumer(irc_message.into()).await?;
 
                     }
                 }
             }
 
-            Ok(msg) = my_subscriber.recv_from_consumer_transform::<irc_parser::IrcMessage>()=> {
-
-                let irc_command = msg.context.command.to_owned();
-                let irc_channel = msg.context.destination.to_owned();
-                let irc_message = msg.payload;
-                let msg = format!("{} {} :{}",irc_command, irc_channel, irc_message);
-                write.send(msg.as_ws_text()).await?;
+            Ok(msg) = my_subscriber.recv_from_consumer()=> {
+                println!("[TWITCH][TX] {:?}", msg);
             }
         }
     }

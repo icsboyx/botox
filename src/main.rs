@@ -4,22 +4,18 @@ use config::*;
 mod bus;
 use bus::*;
 use serde::{Deserialize, Serialize};
+use tokio::time::sleep;
 
 mod irc_parser;
-use irc_parser::*;
 
-// mod commands;
-// use commands::*;
+mod tts;
 
 mod defs;
 
 mod twitch;
 
-use std::{collections::HashMap, path::Path, process::exit, sync::Arc};
-use tokio::{
-    io::{unix::AsyncFd, AsyncBufReadExt, BufReader},
-    time::{sleep, Duration},
-};
+use std::{path::Path, process::exit, sync::Arc, time::Duration};
+// use tokio::{ io::{ AsyncBufReadExt, BufReader }, time::{ sleep, Duration } };
 
 #[tokio::main]
 async fn main() {
@@ -40,62 +36,24 @@ async fn main() {
     }
     let bus = Arc::new(Bus::new());
 
-    tokio::spawn(test_sub(bus.clone()));
     tokio::spawn(twitch::start(bus.clone(), config.server, config.user));
-    tokio::spawn(user_input(bus.clone()));
-    // tokio::spawn(commands::start(bus.clone()));
+    tokio::spawn(monitor_task(bus.clone()));
+    tokio::spawn(tts::start(bus.clone()));
 
     loop {
         sleep(Duration::from_secs(1)).await;
     }
 }
 
-async fn test_sub(bus: Arc<Bus>) {
-    println!("waiting for twitch entity");
-    let mut twitch_sunscriber = bus.subscribe_to_entity("twitch").await.unwrap();
-    println!("got twitch entity");
+pub async fn monitor_task(bus: Arc<Bus>) {
+    let context = "monitor_task";
+    let mut twitch_subscriber = bus.subscribe_to_entity("twitch").await.unwrap();
+    println!("[{}] got twitch entity", context);
+
     loop {
-        let msg = twitch_sunscriber
-            .recv_transform::<IrcMessage>()
-            .await
-            .unwrap();
-        println!("[test_sub][row] {:?}", msg);
-    }
-}
-
-async fn user_input(bus: Arc<Bus>) {
-    let mut task_handlers = Vec::new();
-
-    let twitch_sunscriber = bus.subscribe_to_entity("twitch").await.unwrap();
-    let mut clone_t = twitch_sunscriber.clone();
-
-    let read_user_input = async move {
-        let mut std_out = BufReader::new(tokio::io::stdin());
-
-        loop {
-            let mut line = String::new();
-            std_out.read_line(&mut line).await.unwrap();
-            println!("[user_input] {:?}", line);
-            let irc_message = IrcMessage::new(
-                HashMap::new(),
-                Context::new("test", "PRIVMSG", "#icsboyx"),
-                line,
-            );
-            twitch_sunscriber.send(irc_message).await.unwrap();
+        let msg = twitch_subscriber.recv().await.unwrap();
+        {
+            println!("[{}] {:?}", context, msg);
         }
-    };
-
-    let read_twitch = async move {
-        loop {
-            let msg = clone_t.recv_transform::<IrcMessage>().await.unwrap();
-            println!("[user_input][row] {:?}", msg);
-        }
-    };
-
-    task_handlers.push(tokio::spawn(read_user_input));
-    task_handlers.push(tokio::spawn(read_twitch));
-
-    for task in task_handlers {
-        task.await.unwrap();
     }
 }
