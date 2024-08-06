@@ -1,25 +1,10 @@
 #![allow(dead_code)]
 use crate::irc_parser::IrcMessage;
 use anyhow::Result;
+
 use bincode;
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
-
 use tokio::sync::{broadcast, mpsc, Notify, RwLock};
-
-pub trait BusMessageTrait: Debug + Send + Sync + 'static {
-    fn as_bus_message(self) -> BusMessageTypeEnum;
-}
-impl BusMessageTrait for String {
-    fn as_bus_message(self) -> BusMessageTypeEnum {
-        BusMessageTypeEnum::String(self)
-    }
-}
-
-impl BusMessageTrait for IrcMessage {
-    fn as_bus_message(self) -> BusMessageTypeEnum {
-        BusMessageTypeEnum::IrcMessage(self)
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum BusMessageTypeEnum {
@@ -58,9 +43,11 @@ impl BusEntity {
     }
 
     pub async fn recv<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
-        let message = self.producer_rx.write().await.recv().await.unwrap();
-        let message: T = bincode::deserialize(&message[..]).unwrap();
-        Ok(message)
+        if let Some(message) = self.producer_rx.write().await.recv().await {
+            let message: T = bincode::deserialize(&message[..])?;
+            return Ok(message);
+        }
+        anyhow::bail!("Failed to receive message")
     }
 }
 
@@ -79,16 +66,16 @@ impl BusEntitySubscriber {
 
     pub async fn recv<T: serde::de::DeserializeOwned>(&mut self) -> Result<T> {
         let message = self.rx.write().await.recv().await?;
-        let message: T = bincode::deserialize(&message[..]).unwrap();
+        let message: T = bincode::deserialize(&message[..])?;
         Ok(message)
     }
-
     pub async fn send(&self, message: impl serde::ser::Serialize) -> Result<()> {
         let message = bincode::serialize(&message)?;
         self.tx.send(message).await?;
         Ok(())
     }
 }
+
 pub struct Bus {
     entities: Arc<RwLock<HashMap<String, Arc<BusEntity>>>>,
     notify: Notify,
@@ -142,5 +129,14 @@ impl Bus {
             return Some(subscriber);
         }
         None
+    }
+
+    pub async fn remove_entity(&mut self, id: &str) {
+        self.entities.write().await.remove(id);
+        self.notify.notify_waiters();
+    }
+
+    pub async fn get_all_entities<'a>(&'a self) -> Vec<Arc<BusEntity>> {
+        self.entities.read().await.values().cloned().collect()
     }
 }
