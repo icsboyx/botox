@@ -1,18 +1,14 @@
 use crate::*;
 
-use futures::AsyncRead;
-use futures::AsyncWrite;
 use irc_parser::IrcMessage;
 use msedge_tts::{
     tts::{
-        client::{connect, connect_async, MSEdgeTTSClientAsync},
-        stream::msedge_tts_split_async,
+        client::{connect_async, MSEdgeTTSClientAsync},
         SpeechConfig,
     },
-    voice::{self, get_voices_list},
+    voice::get_voices_list,
 };
 use tokio::sync::RwLock;
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 pub async fn start(bus: Arc<Bus>) {
     let context = "tts";
@@ -32,7 +28,7 @@ pub async fn start(bus: Arc<Bus>) {
 
     loop {
         tokio::select! {
-            Ok(msg) = twitch_subscriber.recv() => {
+            Ok(msg) = twitch_subscriber.recv::<IrcMessage>() => {
                 println!("[{}] {:?}", context, msg);
                 let msg = IrcMessage::try_from(msg).unwrap();
                 if msg.context.command == "PRIVMSG" {
@@ -40,7 +36,7 @@ pub async fn start(bus: Arc<Bus>) {
                     create_audio( &bot_voice_config, text, stream.clone()).await;
                 }
             }
-            Ok(msg) = twitch_subscriber1.recv() => {
+            Ok(msg) = twitch_subscriber1.recv::<IrcMessage>() => {
                 println!("[{}] {:?}", context, msg);
                 let msg = IrcMessage::try_from(msg).unwrap();
                 if msg.context.command == "PRIVMSG" {

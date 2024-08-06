@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 use crate::irc_parser::IrcMessage;
 use anyhow::Result;
-use std::{any::Any, collections::HashMap, fmt::Debug, sync::Arc};
+use bincode;
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use tokio::sync::{broadcast, mpsc, Notify, RwLock};
 
@@ -26,47 +27,12 @@ pub enum BusMessageTypeEnum {
     IrcMessage(IrcMessage),
 }
 
-impl From<String> for BusMessageTypeEnum {
-    fn from(s: String) -> Self {
-        BusMessageTypeEnum::String(s)
-    }
-}
-
-impl From<IrcMessage> for BusMessageTypeEnum {
-    fn from(m: IrcMessage) -> Self {
-        BusMessageTypeEnum::IrcMessage(m)
-    }
-}
-
-// Implementing TryFrom<BusMessageTypeEnum> for IrcMessage
-impl TryFrom<BusMessageTypeEnum> for IrcMessage {
-    type Error = &'static str;
-
-    fn try_from(value: BusMessageTypeEnum) -> Result<Self, Self::Error> {
-        match value {
-            BusMessageTypeEnum::IrcMessage(m) => Ok(m),
-            _ => Err("BusMessageTypeEnum does not contain an IrcMessage"),
-        }
-    }
-}
-// Implementing TryFrom<BusMessageTypeEnum> for String
-impl TryFrom<BusMessageTypeEnum> for String {
-    type Error = &'static str;
-
-    fn try_from(value: BusMessageTypeEnum) -> Result<Self, Self::Error> {
-        match value {
-            BusMessageTypeEnum::String(s) => Ok(s),
-            _ => Err("BusMessageTypeEnum does not contain a String"),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct BusEntity {
     id: String,
-    clients: broadcast::Sender<BusMessageTypeEnum>,
-    producer_tx: mpsc::Sender<BusMessageTypeEnum>,
-    producer_rx: Arc<RwLock<mpsc::Receiver<BusMessageTypeEnum>>>,
+    clients: broadcast::Sender<Vec<u8>>,
+    producer_tx: mpsc::Sender<Vec<u8>>,
+    producer_rx: Arc<RwLock<mpsc::Receiver<Vec<u8>>>>,
 }
 
 impl BusEntity {
@@ -85,63 +51,40 @@ impl BusEntity {
         &self.id
     }
 
-    pub async fn send_to_consumer(&self, message: BusMessageTypeEnum) -> Result<()> {
-        // if let Ok(message) = serde_json::to_string(&message) {
-        //     self.clients.send(message)?;
-        //     return Ok(());
+    pub async fn send(&self, message: impl serde::ser::Serialize) -> Result<()> {
+        let message = bincode::serialize(&message)?;
         self.clients.send(message)?;
         Ok(())
     }
 
-    pub async fn recv_from_consumer(&self) -> Result<BusMessageTypeEnum> {
+    pub async fn recv<T: serde::de::DeserializeOwned>(&self) -> Result<T> {
         let message = self.producer_rx.write().await.recv().await.unwrap();
+        let message: T = bincode::deserialize(&message[..]).unwrap();
         Ok(message)
     }
-
-    // pub async fn recv_from_consumer_transform<MessageType: Serialize + for<'a> Deserialize<'a>>(
-    //     &self
-    // ) -> Result<MessageType> {
-    //     let message = self.producer_rx.write().await.recv().await.unwrap();
-    //     let message: MessageType = serde_json::from_str(&message)?;
-    //     Ok(message)
-    // }
 }
 
 #[derive(Debug, Clone)]
 pub struct BusEntitySubscriber {
-    rx: Arc<RwLock<broadcast::Receiver<BusMessageTypeEnum>>>,
-    tx: Arc<mpsc::Sender<BusMessageTypeEnum>>,
+    rx: Arc<RwLock<broadcast::Receiver<Vec<u8>>>>,
+    tx: Arc<mpsc::Sender<Vec<u8>>>,
 }
 
 impl BusEntitySubscriber {
-    pub fn new(
-        rx: broadcast::Receiver<BusMessageTypeEnum>,
-        tx: mpsc::Sender<BusMessageTypeEnum>,
-    ) -> Self {
+    pub fn new(rx: broadcast::Receiver<Vec<u8>>, tx: mpsc::Sender<Vec<u8>>) -> Self {
         let rx = Arc::new(RwLock::new(rx));
         let tx = Arc::new(tx);
         BusEntitySubscriber { rx, tx }
     }
 
-    pub async fn recv(&mut self) -> Result<BusMessageTypeEnum> {
+    pub async fn recv<T: serde::de::DeserializeOwned>(&mut self) -> Result<T> {
         let message = self.rx.write().await.recv().await?;
+        let message: T = bincode::deserialize(&message[..]).unwrap();
         Ok(message)
     }
 
-    // pub async fn recv_transform<MessageType: Serialize + for<'a> Deserialize<'a>>(
-    //     &mut self
-    // ) -> Result<MessageType> {
-    //     let message = self.rx.write().await.recv().await?;
-    //     let message: MessageType = serde_json::from_str(&message)?;
-    //     Ok(message)
-    // }
-
-    pub async fn send(&self, message: BusMessageTypeEnum) -> Result<()> {
-        // if let Ok(message) = serde_json::to_string(&message) {
-        //     self.tx.send(message).await?;
-        //     return Ok(());
-        // }
-        // anyhow::bail!("Failed to serialize message");
+    pub async fn send(&self, message: impl serde::ser::Serialize) -> Result<()> {
+        let message = bincode::serialize(&message)?;
         self.tx.send(message).await?;
         Ok(())
     }

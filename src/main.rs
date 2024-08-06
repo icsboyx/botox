@@ -3,15 +3,13 @@ use config::*;
 
 mod bus;
 use bus::*;
+use irc_parser::IrcMessage;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
-
-mod irc_parser;
-
-mod tts;
-
 mod defs;
-
+mod irc_parser;
+mod test;
+mod tts;
 mod twitch;
 
 use std::{path::Path, process::exit, sync::Arc, time::Duration};
@@ -51,7 +49,7 @@ pub async fn monitor_task(bus: Arc<Bus>) {
     println!("[{}] got twitch entity", context);
 
     loop {
-        let msg = twitch_subscriber.recv().await.unwrap();
+        let msg = twitch_subscriber.recv::<IrcMessage>().await.unwrap();
         {
             println!("[{}] {:?}", context, msg);
         }
