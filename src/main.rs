@@ -1,11 +1,9 @@
 mod config;
-use async_std::{ sync::RwLock, task };
+
 use config::*;
 mod bus;
 use bus::*;
-use irc_parser::{ Context, IrcMessage };
-use serde::{ Deserialize, Serialize };
-use tokio::time::sleep;
+
 mod defs;
 mod irc_parser;
 mod tts;

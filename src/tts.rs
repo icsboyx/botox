@@ -1,14 +1,9 @@
 use crate::*;
-use anyhow::{ Context, Result };
-use defs::AsArcMutex;
-use futures::{ future::ok, pin_mut };
+use anyhow::Result;
 use irc_parser::IrcMessage;
-use msedge_tts::{
-    tts::{ client::{ connect, connect_async }, SpeechConfig },
-    voice::get_voices_list,
-};
-use rodio::{ Decoder, OutputStream, Sink, Source };
-use std::{ io::BufReader, pin::pin };
+use msedge_tts::{ tts::{ client::connect, SpeechConfig }, voice::get_voices_list };
+use rodio::OutputStream;
+use std::io::BufReader;
 
 pub async fn start(bus: Arc<Bus>) -> Result<()> {
     let context = "tts";
@@ -32,17 +27,6 @@ pub async fn start(bus: Arc<Bus>) -> Result<()> {
             }
         }
     }
-
-    // loop {
-    //     let bot_voice_config = SpeechConfig::from(voice);
-    //     let msg = twitch_subscriber.recv::<IrcMessage>().await.unwrap();
-    //     if msg.context.command == "PRIVMSG" {
-    //         println!("Bot voice config: {:?}", bot_voice_config);
-    //         let text = msg.payload;
-    //         println!("[{}][TX] {}", context, text);
-    //         tokio::spawn(create_audio(bot_voice_config, text));
-    //     }
-    // }
 }
 
 pub fn create_audio(voice_config: SpeechConfig, text: String) -> Result<()> {

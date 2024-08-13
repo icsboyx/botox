@@ -15,13 +15,6 @@ It uses several Rust crates including `tokio` async framework.
 - `tts.rs`: Handles text-to-speech functionality.
 - `twitch.rs`: Manages Twitch integration.
 
-## Dependencies
-
-- `async-std`: For asynchronous programming.
-- `tokio`: For asynchronous runtime.
-- `serde`: For serialization and deserialization.
-- `irc-parser`: For parsing IRC messages.
-
 ## Configuration
 
 The application expects a configuration file named `config.toml` in the root directory. The configuration file should contain the following:
