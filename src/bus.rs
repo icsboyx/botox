@@ -3,8 +3,8 @@ use crate::irc_parser::IrcMessage;
 use anyhow::Result;
 
 use bincode;
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
-use tokio::sync::{broadcast, mpsc, Notify, RwLock};
+use std::{ collections::HashMap, fmt::Debug, sync::Arc };
+use tokio::sync::{ broadcast, mpsc, Notify, RwLock };
 
 #[derive(Debug, Clone)]
 pub enum BusMessageTypeEnum {
@@ -92,19 +92,13 @@ impl Bus {
     pub async fn add_new_entity(&self, id: impl AsRef<str>) -> Arc<BusEntity> {
         let entity = BusEntity::new(&id);
         let entity = Arc::new(entity);
-        self.entities
-            .write()
-            .await
-            .insert(id.as_ref().to_string(), entity.clone());
+        self.entities.write().await.insert(id.as_ref().to_string(), entity.clone());
         self.notify.notify_waiters();
         entity
     }
 
     pub async fn add_entity(&mut self, entity: BusEntity) {
-        self.entities
-            .write()
-            .await
-            .insert(entity.id().to_string(), Arc::new(entity));
+        self.entities.write().await.insert(entity.id().to_string(), Arc::new(entity));
         self.notify.notify_waiters();
     }
 
